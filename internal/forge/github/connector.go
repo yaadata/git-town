@@ -131,7 +131,7 @@ func (self Connector) findProposalViaAPI(branch, target gitdomain.LocalBranchNam
 	pullRequests, _, err := self.client.PullRequests.List(context.Background(), self.Organization, self.Repository, &github.PullRequestListOptions{
 		Head:  self.Organization + ":" + branch.String(),
 		Base:  target.String(),
-		State: "open",
+		State: "all",
 	})
 	if err != nil {
 		self.log.Failed(err.Error())
@@ -141,10 +141,30 @@ func (self Connector) findProposalViaAPI(branch, target gitdomain.LocalBranchNam
 		self.log.Success("none")
 		return None[forgedomain.Proposal](), nil
 	}
+
+	var pullRequest *github.PullRequest
 	if len(pullRequests) > 1 {
-		return None[forgedomain.Proposal](), fmt.Errorf(messages.ProposalMultipleFromToFound, len(pullRequests), branch, target)
+		for _, pr := range pullRequests {
+			if pr.State != nil && *pr.State == "open" {
+				if pullRequest == nil {
+					pullRequest = pr
+				} else {
+					return None[forgedomain.Proposal](), fmt.Errorf(messages.ProposalMultipleFromToFound, len(pullRequests), branch, target)
+				}
+			}
+		}
+
+		if pullRequest == nil {
+			return None[forgedomain.Proposal](), fmt.Errorf(messages.ProposalMultipleFromToFound, len(pullRequests), branch, target)
+		}
 	}
-	proposal := parsePullRequest(pullRequests[0])
+	var proposal forgedomain.ProposalData
+	if pullRequest == nil {
+		proposal = parsePullRequest(pullRequests[0])
+	} else {
+		proposal = parsePullRequest(pullRequest)
+	}
+
 	self.log.Log(fmt.Sprintf("%s (%s)", colors.BoldGreen().Styled("#"+strconv.Itoa(proposal.Number)), proposal.Title))
 	return Some(forgedomain.Proposal{Data: proposal, ForgeType: forgedomain.ForgeTypeGitHub}), nil
 }
