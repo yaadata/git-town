@@ -80,7 +80,7 @@ func NewLineageTree(currentBranch gitdomain.LocalBranchName, lineage Lineage, ma
 
 	tree.Node = tree.Node.childNodes[0]
 	branches := make([]gitdomain.LocalBranchName, 0, len(visited))
-	for branch, _ := range visited {
+	for branch := range visited {
 		branches = append(branches, branch)
 	}
 	tree.branches = branches
