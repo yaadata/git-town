@@ -11,11 +11,11 @@ import (
 )
 
 type ProposalStackLineageBuilder interface {
-	// Adds the next branch in the lineage chain
-	AddBranch(childBranch gitdomain.LocalBranchName, parentBranch Option[gitdomain.LocalBranchName]) (ProposalStackLineageBuilder, error)
 	// Build - creates the proposal lineage based on the display location
-	Build(cfgs ...configureProposalLineageBuildOptions) Option[string]
-	// GetProposalByBranch
+	Build(tree LineageTree, cfgs ...configureProposalLineageBuildOptions) Option[string]
+	// Adds a branch and tracks the proposal if there is one
+	AddBranch(branch gitdomain.LocalBranchName) (ProposalStackLineageBuilder, error)
+	// GetProposal fetches the proposal data given a branch name.
 	GetProposal(branch gitdomain.LocalBranchName) Option[forgedomain.ProposalData]
 }
 
@@ -77,13 +77,14 @@ func WithCurrentBranch(branch gitdomain.LocalBranchName) configureProposalLineag
 	}
 }
 
-func NewProposalStackLineageBuilder(connector forgedomain.Connector, exemptBranches ...gitdomain.LocalBranchName) ProposalStackLineageBuilder {
+func NewProposalStackLineageBuilder(connector forgedomain.Connector, lineage Lineage, exemptBranches ...gitdomain.LocalBranchName) ProposalStackLineageBuilder {
 	if _, hasFindProposal := connector.FindProposalFn().Get(); !hasFindProposal {
 		return &noopProposalLineageBuilder{}
 	}
 
 	return &proposalStackLineageBuilder{
-		orderedLineage:                           make([]*proposalLineage, 0),
+		lineage:                                  lineage,
+		branchToProposal:                         make(map[gitdomain.LocalBranchName]Option[forgedomain.ProposalData]),
 		connector:                                connector,
 		branchesExemptFromDisplayingProposalInfo: exemptBranches,
 	}
@@ -96,40 +97,36 @@ type proposalLineage struct {
 
 type proposalStackLineageBuilder struct {
 	connector                                forgedomain.Connector
-	orderedLineage                           []*proposalLineage
+	lineage                                  Lineage
+	branchToProposal                         map[gitdomain.LocalBranchName]Option[forgedomain.ProposalData]
 	branchesExemptFromDisplayingProposalInfo gitdomain.LocalBranchNames
 }
 
-func (self *proposalStackLineageBuilder) AddBranch(childBranch gitdomain.LocalBranchName, parentBranch Option[gitdomain.LocalBranchName]) (ProposalStackLineageBuilder, error) {
-	if self.branchesExemptFromDisplayingProposalInfo.Contains(childBranch) || parentBranch.IsNone() {
-		self.orderedLineage = append(self.orderedLineage, &proposalLineage{
-			branch:   childBranch,
-			proposal: None[forgedomain.ProposalData](),
-		})
+func (self *proposalStackLineageBuilder) AddBranch(branch gitdomain.LocalBranchName) (ProposalStackLineageBuilder, error) {
+	parentBranch := self.lineage.Parent(branch)
+	if self.branchesExemptFromDisplayingProposalInfo.Contains(branch) || parentBranch.IsNone() {
+		self.branchToProposal[branch] = None[forgedomain.ProposalData]()
 		return self, nil
 	}
 
 	parent := parentBranch.GetOrPanic().BranchName().LocalName()
 	findProposalFn, _ := self.connector.FindProposalFn().Get()
 
-	proposal, err := findProposalFn(childBranch, parent)
+	proposal, err := findProposalFn(branch, parent)
 	if err != nil {
-		return self, fmt.Errorf("failed to find proposal for branch %s: %w", childBranch, err)
+		return self, fmt.Errorf("failed to find proposal for branch %s: %w", branch, err)
 	}
 
 	proposalData, hasProposal := proposal.Get()
 	if !hasProposal {
-		return self, fmt.Errorf("no proposal found branch %q", childBranch)
+		return self, fmt.Errorf("no proposal found branch %q", branch)
 	}
 
-	self.orderedLineage = append(self.orderedLineage, &proposalLineage{
-		branch:   childBranch,
-		proposal: Some(proposalData.Data.Data()),
-	})
+	self.branchToProposal[branch] = Some(proposalData.Data.Data())
 	return self, nil
 }
 
-func (self *proposalStackLineageBuilder) Build(cfgs ...configureProposalLineageBuildOptions) Option[string] {
+func (self *proposalStackLineageBuilder) Build(tree LineageTree, cfgs ...configureProposalLineageBuildOptions) Option[string] {
 	builderOptions := newProposalLineageBuilderOptions()
 	for _, cfg := range cfgs {
 		cfg(builderOptions)
@@ -140,24 +137,7 @@ func (self *proposalStackLineageBuilder) Build(cfgs ...configureProposalLineageB
 		builder.WriteString(text)
 	}
 
-	length := len(self.orderedLineage)
-	var numberOfCapturedProposals uint
-	for i := len(self.orderedLineage); i > 0; i-- {
-		node := self.orderedLineage[length-i]
-		indent := strings.Repeat(" ", (length-i)*2)
-		if self.branchesExemptFromDisplayingProposalInfo.Contains(node.branch) {
-			builder.WriteString(fmt.Sprintf("%s %s %s\n", indent, builderOptions.indentMarker, node.branch.BranchName()))
-			continue
-		}
-
-		proposalData, hasProposalData := node.proposal.Get()
-		if !hasProposalData {
-			break
-		}
-
-		builder.WriteString(formattedDisplay(builderOptions, indent, proposalData))
-		numberOfCapturedProposals++
-	}
+	builder.WriteString(self.build(tree.Node, builderOptions))
 
 	for _, text := range builderOptions.afterStackDisplay {
 		builder.WriteString(text)
@@ -166,12 +146,34 @@ func (self *proposalStackLineageBuilder) Build(cfgs ...configureProposalLineageB
 	return Some(builder.String())
 }
 
-func (self *proposalStackLineageBuilder) GetProposal(branch gitdomain.LocalBranchName) Option[forgedomain.ProposalData] {
-	response := None[forgedomain.ProposalData]()
-	for _, curr := range self.orderedLineage {
-		if curr.branch == branch {
-			response = curr.proposal
+func (self *proposalStackLineageBuilder) build(node *LineageTreeNode, builderOptions *proposalLineageBuildOptions) string {
+	var builder strings.Builder
+	indent := strings.Repeat(" ", node.depth*2)
+	if self.branchesExemptFromDisplayingProposalInfo.Contains(node.branch) {
+		builder.WriteString(fmt.Sprintf("%s %s %s\n", indent, builderOptions.indentMarker, node.branch.BranchName()))
+		for _, child := range node.childNodes {
+			builder.WriteString(self.build(child, builderOptions))
 		}
+		return builder.String()
+	}
+
+	proposalData, ok := self.branchToProposal[node.branch]
+	if !ok || proposalData.IsNone() {
+		return builder.String()
+	}
+
+	builder.WriteString(formattedDisplay(builderOptions, indent, proposalData.GetOrPanic()))
+	for _, child := range node.childNodes {
+		builder.WriteString(self.build(child, builderOptions))
+	}
+
+	return builder.String()
+}
+
+func (self *proposalStackLineageBuilder) GetProposal(branch gitdomain.LocalBranchName) Option[forgedomain.ProposalData] {
+	response, ok := self.branchToProposal[branch]
+	if !ok {
+		return None[forgedomain.ProposalData]()
 	}
 	return response
 }
@@ -192,11 +194,11 @@ func formattedDisplay(builderOptions *proposalLineageBuildOptions, currentIndent
 
 type noopProposalLineageBuilder struct{}
 
-func (self *noopProposalLineageBuilder) AddBranch(childBranch gitdomain.LocalBranchName, parentBranch Option[gitdomain.LocalBranchName]) (ProposalStackLineageBuilder, error) {
+func (self *noopProposalLineageBuilder) AddBranch(branch gitdomain.LocalBranchName) (ProposalStackLineageBuilder, error) {
 	return self, nil
 }
 
-func (self *noopProposalLineageBuilder) Build(cfgs ...configureProposalLineageBuildOptions) Option[string] {
+func (self *noopProposalLineageBuilder) Build(tree LineageTree, cfgs ...configureProposalLineageBuildOptions) Option[string] {
 	return None[string]()
 }
 

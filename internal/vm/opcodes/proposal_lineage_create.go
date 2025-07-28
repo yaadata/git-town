@@ -23,16 +23,17 @@ func (self *ProposalLineageCreate) Run(args shared.RunArgs) error {
 		return forgedomain.UnsupportedServiceError()
 	}
 
-	builder := configdomain.NewProposalStackLineageBuilder(connector, args.Config.Value.MainAndPerennials()...)
+	builder := configdomain.NewProposalStackLineageBuilder(connector, args.Config.Value.NormalConfig.Lineage, args.Config.Value.MainAndPerennials()...)
+	lineageTree := configdomain.NewLineageTree(self.Branch, args.Config.Value.NormalConfig.Lineage)
 	lineageInformation := args.Config.Value.NormalConfig.Lineage.BranchLineage(self.Branch)
 	for _, curr := range lineageInformation {
-		currParent := args.Config.Value.NormalConfig.Lineage.Parent(curr)
-		builder.AddBranch(curr, currParent)
+		builder.AddBranch(curr)
 	}
 
 	switch self.ProposalLineageIn {
 	case configdomain.ProposalLineageInTerminal:
 		stackLineage := builder.Build(
+			lineageTree,
 			configdomain.WithCurrentBranch(self.Branch),
 			configdomain.WithCurrentBranchIndicator("*"),
 			configdomain.WithIndentMarker("•"),
@@ -57,6 +58,7 @@ func (self *ProposalLineageCreate) Run(args shared.RunArgs) error {
 		}
 
 		stackLineage := builder.Build(
+			lineageTree,
 			configdomain.WithCurrentBranch(self.Branch),
 			configdomain.WithCurrentBranchIndicator(":point_left:"),
 			configdomain.WithIndentMarker("-"),
