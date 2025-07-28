@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/git-town/git-town/v21/internal/cli/colors"
 	"github.com/git-town/git-town/v21/internal/config/configdomain"
 	"github.com/git-town/git-town/v21/internal/forge/forgedomain"
 	"github.com/git-town/git-town/v21/internal/git/gitdomain"
-	"github.com/git-town/git-town/v21/internal/messages"
 	"github.com/git-town/git-town/v21/internal/vm/shared"
 	. "github.com/git-town/git-town/v21/pkg/prelude"
 )
@@ -20,39 +18,12 @@ type ProposalLineageCreate struct {
 }
 
 func (self *ProposalLineageCreate) Run(args shared.RunArgs) error {
-	if currentBranchType := args.Config.Value.BranchType(self.Branch); currentBranchType == configdomain.BranchTypeMainBranch || currentBranchType == configdomain.BranchTypePerennialBranch {
-		s := strings.Builder{}
-		s.WriteString("\n")
-		s.WriteString(colors.BoldCyan().Styled(fmt.Sprintf(messages.ProposalLineageUnsupportedForBranchType, currentBranchType)))
-		s.WriteString("\n")
-		fmt.Print(s.String())
-		return nil
-	}
 	connector, hasConnector := args.Connector.Get()
 	if !hasConnector {
 		return forgedomain.UnsupportedServiceError()
 	}
 
-	findProposalFn, hasFindProposalFn := connector.FindProposalFn().Get()
-	if !hasFindProposalFn {
-		return fmt.Errorf("connector does not support finding proposals")
-	}
-
-	targetBranch := args.Config.Value.NormalConfig.Lineage.Parent(self.Branch)
-	if targetBranch.IsNone() {
-		return fmt.Errorf("current branch has no parent. Cannot find proposal to create lineage")
-	}
-
-	proposalData, err := findProposalFn(self.Branch, targetBranch.GetOrPanic())
-	if err != nil {
-		return err
-	}
-
-	if proposalData.IsNone() {
-		return fmt.Errorf("current branch has no proposal")
-	}
-
-	builder := configdomain.NewProposalLineageBuilder(connector, args.Config.Value.MainAndPerennials()...)
+	builder := configdomain.NewProposalStackLineageBuilder(connector, args.Config.Value.MainAndPerennials()...)
 	lineageInformation := args.Config.Value.NormalConfig.Lineage.BranchLineage(self.Branch)
 	for _, curr := range lineageInformation {
 		currParent := args.Config.Value.NormalConfig.Lineage.Parent(curr)
@@ -74,6 +45,12 @@ func (self *ProposalLineageCreate) Run(args shared.RunArgs) error {
 		fmt.Print(stackLineage.GetOrPanic())
 		return nil
 	case configdomain.ProposalLineageOperationInProposalBody:
+		proposalData := builder.GetProposal(self.Branch)
+
+		if proposalData.IsNone() {
+			fmt.Println("current branch has no proposal to sync")
+			return nil
+		}
 		explainationText := "Current dependencies on/for this pull-request\n\n"
 		if args.Config.Value.NormalConfig.ForgeType.GetOrDefault() == forgedomain.ForgeTypeGitLab {
 			explainationText = strings.ReplaceAll(explainationText, "pull-request", "merge-request")
@@ -91,8 +68,9 @@ func (self *ProposalLineageCreate) Run(args shared.RunArgs) error {
 		if stackLineage.IsNone() {
 			return nil
 		}
-		proposalDataUnwrapped := proposalData.GetOrPanic().Data
-		currentBody := proposalDataUnwrapped.Data().Body.GetOrDefault()
+
+		proposalDataUnwrapped := proposalData.GetOrPanic()
+		currentBody := proposalDataUnwrapped.Body.GetOrDefault()
 		lineageString := stackLineage.GetOrDefault()
 
 		// Update body with lineage using our marker-based approach
@@ -106,7 +84,6 @@ func (self *ProposalLineageCreate) Run(args shared.RunArgs) error {
 	default:
 		return nil
 	}
-	return nil
 }
 
 func updateProposalBodyWithStackLineage(currentBody, lineageContent string) string {

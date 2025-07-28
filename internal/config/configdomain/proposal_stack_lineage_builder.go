@@ -10,11 +10,13 @@ import (
 	. "github.com/git-town/git-town/v21/pkg/prelude"
 )
 
-type ProposalLineageBuilder interface {
+type ProposalStackLineageBuilder interface {
 	// Adds the next branch in the lineage chain
-	AddBranch(childBranch gitdomain.LocalBranchName, parentBranch Option[gitdomain.LocalBranchName]) (ProposalLineageBuilder, error)
+	AddBranch(childBranch gitdomain.LocalBranchName, parentBranch Option[gitdomain.LocalBranchName]) (ProposalStackLineageBuilder, error)
 	// Build - creates the proposal lineage based on the display location
 	Build(cfgs ...configureProposalLineageBuildOptions) Option[string]
+	// GetProposalByBranch
+	GetProposal(branch gitdomain.LocalBranchName) Option[forgedomain.ProposalData]
 }
 
 type proposalLineageBuildOptions struct {
@@ -75,12 +77,12 @@ func WithCurrentBranch(branch gitdomain.LocalBranchName) configureProposalLineag
 	}
 }
 
-func NewProposalLineageBuilder(connector forgedomain.Connector, exemptBranches ...gitdomain.LocalBranchName) ProposalLineageBuilder {
+func NewProposalStackLineageBuilder(connector forgedomain.Connector, exemptBranches ...gitdomain.LocalBranchName) ProposalStackLineageBuilder {
 	if _, hasFindProposal := connector.FindProposalFn().Get(); !hasFindProposal {
 		return &noopProposalLineageBuilder{}
 	}
 
-	return &proposalLineageBuilder{
+	return &proposalStackLineageBuilder{
 		orderedLineage:                           make([]*proposalLineage, 0),
 		connector:                                connector,
 		branchesExemptFromDisplayingProposalInfo: exemptBranches,
@@ -92,13 +94,13 @@ type proposalLineage struct {
 	proposal Option[forgedomain.ProposalData]
 }
 
-type proposalLineageBuilder struct {
+type proposalStackLineageBuilder struct {
 	connector                                forgedomain.Connector
 	orderedLineage                           []*proposalLineage
 	branchesExemptFromDisplayingProposalInfo gitdomain.LocalBranchNames
 }
 
-func (self *proposalLineageBuilder) AddBranch(childBranch gitdomain.LocalBranchName, parentBranch Option[gitdomain.LocalBranchName]) (ProposalLineageBuilder, error) {
+func (self *proposalStackLineageBuilder) AddBranch(childBranch gitdomain.LocalBranchName, parentBranch Option[gitdomain.LocalBranchName]) (ProposalStackLineageBuilder, error) {
 	if self.branchesExemptFromDisplayingProposalInfo.Contains(childBranch) || parentBranch.IsNone() {
 		self.orderedLineage = append(self.orderedLineage, &proposalLineage{
 			branch:   childBranch,
@@ -127,7 +129,7 @@ func (self *proposalLineageBuilder) AddBranch(childBranch gitdomain.LocalBranchN
 	return self, nil
 }
 
-func (self *proposalLineageBuilder) Build(cfgs ...configureProposalLineageBuildOptions) Option[string] {
+func (self *proposalStackLineageBuilder) Build(cfgs ...configureProposalLineageBuildOptions) Option[string] {
 	builderOptions := newProposalLineageBuilderOptions()
 	for _, cfg := range cfgs {
 		cfg(builderOptions)
@@ -164,6 +166,16 @@ func (self *proposalLineageBuilder) Build(cfgs ...configureProposalLineageBuildO
 	return Some(builder.String())
 }
 
+func (self *proposalStackLineageBuilder) GetProposal(branch gitdomain.LocalBranchName) Option[forgedomain.ProposalData] {
+	response := None[forgedomain.ProposalData]()
+	for _, curr := range self.orderedLineage {
+		if curr.branch == branch {
+			response = curr.proposal
+		}
+	}
+	return response
+}
+
 func formattedDisplay(builderOptions *proposalLineageBuildOptions, currentIndentLevel string, proposalData forgedomain.ProposalData) string {
 	if builderOptions.location == ProposalLineageInTerminal {
 		if builderOptions.currentBranch.GetOrDefault() == proposalData.Source {
@@ -180,10 +192,14 @@ func formattedDisplay(builderOptions *proposalLineageBuildOptions, currentIndent
 
 type noopProposalLineageBuilder struct{}
 
-func (self *noopProposalLineageBuilder) AddBranch(childBranch gitdomain.LocalBranchName, parentBranch Option[gitdomain.LocalBranchName]) (ProposalLineageBuilder, error) {
+func (self *noopProposalLineageBuilder) AddBranch(childBranch gitdomain.LocalBranchName, parentBranch Option[gitdomain.LocalBranchName]) (ProposalStackLineageBuilder, error) {
 	return self, nil
 }
 
 func (self *noopProposalLineageBuilder) Build(cfgs ...configureProposalLineageBuildOptions) Option[string] {
 	return None[string]()
+}
+
+func (self *noopProposalLineageBuilder) GetProposal(branch gitdomain.LocalBranchName) Option[forgedomain.ProposalData] {
+	return None[forgedomain.ProposalData]()
 }

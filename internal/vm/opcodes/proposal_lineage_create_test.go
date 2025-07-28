@@ -72,12 +72,12 @@ func TestUpdateBodyWithLineage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := updateBodyWithLineage(tt.currentBody, tt.lineageContent)
+			result := updateProposalBodyWithStackLineage(tt.currentBody, tt.lineageContent)
 			must.EqOp(t, tt.expected, result)
 
 			// Test idempotency - running again should produce the same result
 			if tt.name == "multiple runs produce same result (idempotent)" {
-				secondRun := updateBodyWithLineage(result, tt.lineageContent)
+				secondRun := updateProposalBodyWithStackLineage(result, tt.lineageContent)
 				must.EqOp(t, result, secondRun)
 			}
 		})
