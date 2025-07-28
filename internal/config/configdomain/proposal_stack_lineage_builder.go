@@ -12,7 +12,7 @@ import (
 
 type ProposalStackLineageBuilder interface {
 	// Build - creates the proposal lineage based on the display location
-	Build(tree LineageTree, cfgs ...configureProposalStackLineage) Option[string]
+	Build(tree ProposalLineageTree, cfgs ...configureProposalStackLineage) Option[string]
 	// Adds a branch and tracks the proposal if there is one
 	AddBranch(branch gitdomain.LocalBranchName) (ProposalStackLineageBuilder, error)
 	// GetProposal fetches the proposal data for a branch, if there is one.
@@ -146,7 +146,7 @@ func (self *proposalStackLineageBuilder) AddBranch(branch gitdomain.LocalBranchN
 	return self, nil
 }
 
-func (self *proposalStackLineageBuilder) Build(tree LineageTree, cfgs ...configureProposalStackLineage) Option[string] {
+func (self *proposalStackLineageBuilder) Build(tree ProposalLineageTree, cfgs ...configureProposalStackLineage) Option[string] {
 	builderOptions := newProposalStackLineageBuilderOptions()
 	for _, cfg := range cfgs {
 		cfg(builderOptions)
@@ -166,7 +166,7 @@ func (self *proposalStackLineageBuilder) Build(tree LineageTree, cfgs ...configu
 	return Some(builder.String())
 }
 
-func (self *proposalStackLineageBuilder) build(node *LineageTreeNode, builderOptions *proposalStackLineageBuildOptions) string {
+func (self *proposalStackLineageBuilder) build(node *ProposalLineageTreeNode, builderOptions *proposalStackLineageBuildOptions) string {
 	var builder strings.Builder
 	indent := strings.Repeat(" ", node.depth*2)
 	if self.branchesExemptFromDisplayingProposalInfo.Contains(node.branch) {
@@ -178,6 +178,7 @@ func (self *proposalStackLineageBuilder) build(node *LineageTreeNode, builderOpt
 	}
 
 	proposalData, ok := self.branchToProposal[node.branch]
+
 	if !ok || proposalData.IsNone() {
 		return builder.String()
 	}
@@ -203,7 +204,8 @@ func formattedDisplay(builderOptions *proposalStackLineageBuildOptions, currentI
 		if builderOptions.currentBranch.GetOrDefault() == proposalData.Source {
 			return colors.Green().Styled(fmt.Sprintf("%s%s %s PR #%d %s (%s)\n", builderOptions.currentBranchIndicator, currentIndentLevel, builderOptions.indentMarker, proposalData.Number, proposalData.Title, proposalData.URL))
 		}
-		return fmt.Sprintf("%s %s PR #%d %s (%s)\n", currentIndentLevel, builderOptions.indentMarker, proposalData.Number, proposalData.Title, proposalData.URL)
+		// NOTE: the extra space in the beginning is to make sure alignment when the stack lineage is displayed in the terminal
+		return fmt.Sprintf(" %s %s PR #%d %s (%s)\n", currentIndentLevel, builderOptions.indentMarker, proposalData.Number, proposalData.Title, proposalData.URL)
 	} else {
 		if builderOptions.currentBranch.GetOrDefault() == proposalData.Source {
 			return fmt.Sprintf("%s %s PR %s %s\n", currentIndentLevel, builderOptions.indentMarker, proposalData.URL, builderOptions.currentBranchIndicator)
@@ -218,7 +220,7 @@ func (self *noopProposalStackLineageBuilder) AddBranch(branch gitdomain.LocalBra
 	return self, nil
 }
 
-func (self *noopProposalStackLineageBuilder) Build(tree LineageTree, cfgs ...configureProposalStackLineage) Option[string] {
+func (self *noopProposalStackLineageBuilder) Build(tree ProposalLineageTree, cfgs ...configureProposalStackLineage) Option[string] {
 	return None[string]()
 }
 
