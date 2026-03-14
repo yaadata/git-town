@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/git-town/git-town/v22/internal/cli/dialog/dialogcomponents/list"
 	"github.com/git-town/git-town/v22/internal/cli/dialog/dialogdomain"
+	"github.com/git-town/git-town/v22/internal/config/configdomain"
 	"github.com/git-town/git-town/v22/internal/gohacks/slice"
 )
 
@@ -13,10 +14,10 @@ import (
 const WindowSize = 9
 
 // RadioList lets the user select one of the given entries.
-func RadioList[S any](entries list.Entries[S], cursor int, title, help string, inputs Inputs, dialogName string) (S, dialogdomain.Exit, error) { //nolint:ireturn
-	if err := RequireTTY(); err != nil {
+func RadioList[S any](entries list.Entries[S], cursor int, title, help string, inputs Inputs, displayDialogs configdomain.DisplayDialogs, dialogName string) (S, dialogdomain.Exit, error) { //nolint:ireturn
+	if err := displayDialogs.Check(); err != nil {
 		var zero S
-		return zero, false, err
+		return zero, true, err
 	}
 	program := tea.NewProgram(radioListModel[S]{
 		List:  list.NewList(entries, cursor),

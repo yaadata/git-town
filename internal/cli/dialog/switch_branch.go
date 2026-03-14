@@ -277,8 +277,8 @@ type NewSwitchBranchEntriesArgs struct {
 }
 
 func SwitchBranch(args SwitchBranchArgs) (gitdomain.LocalBranchName, dialogdomain.Exit, error) {
-	if err := dialogcomponents.RequireTTY(); err != nil {
-		return "", false, err
+	if err := args.DisplayDialogs.Check(); err != nil {
+		return "", true, err
 	}
 	entries := args.EntryData.entries()
 	initialBranchPos := None[int]()
@@ -304,6 +304,7 @@ type SwitchBranchArgs struct {
 	CurrentBranch      Option[gitdomain.LocalBranchName]
 	Cursor             int
 	DisplayBranchTypes configdomain.DisplayTypes
+	DisplayDialogs     configdomain.DisplayDialogs
 	EntryData          EntryData
 	InputName          string
 	Inputs             dialogcomponents.Inputs

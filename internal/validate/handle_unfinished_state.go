@@ -42,6 +42,7 @@ func HandleUnfinishedState(args UnfinishedStateArgs) (configdomain.ProgramFlow, 
 		unfinishedDetails.EndTime,
 		unfinishedDetails.CanSkip,
 		args.Inputs,
+		args.UnvalidatedConfig.NormalConfig.DisplayDialogs,
 	)
 	if err != nil {
 		return configdomain.ProgramFlowExit, err
@@ -161,6 +162,7 @@ func quickValidateConfig(args quickValidateConfigArgs) (config.ValidatedConfig, 
 		localBranches := branchesSnapshot.Branches.LocalBranches().NamesLocalBranches()
 		var exit dialogdomain.Exit
 		mainBranchResult, exit, err := dialog.MainBranch(dialog.MainBranchArgs{
+			DisplayDialogs: args.unvalidated.Value.NormalConfig.DisplayDialogs,
 			Inputs:         args.inputs,
 			Local:          args.unvalidated.Value.GitGlobal.MainBranch,
 			LocalBranches:  localBranches,
@@ -168,8 +170,8 @@ func quickValidateConfig(args quickValidateConfigArgs) (config.ValidatedConfig, 
 			Unscoped:       args.unvalidated.Value.GitUnscoped.MainBranch,
 		})
 		if err != nil {
-			if errors.Is(err, dialogcomponents.ErrNoTTY) {
-				return config.EmptyValidatedConfig(), false, errors.New(messages.NoTTYMainBranchMissing) //lint:ignore ST1005 This error contains user-visible guidance, and therefore needs to end with a period.
+			if cannotDisplayDialogs, ok := errors.AsType[*configdomain.CannotDisplayDialogsError](err); ok {
+				return config.EmptyValidatedConfig(), true, fmt.Errorf(messages.NoTTYMainBranchMissing, cannotDisplayDialogs) //lint:ignore ST1005 This error contains user-visible guidance, and therefore needs to end with a period.
 			}
 			return config.EmptyValidatedConfig(), exit, err
 		}
