@@ -29,12 +29,18 @@ func renderNodeDown(builder *strings.Builder, node TreeNodeWithProposal, current
 		indent := depth * spacesPerIndent
 		builder.WriteString(strings.Repeat(" ", indent))
 		builder.WriteString("- ")
-		if proposal, hasProposal := node.Proposal.Get(); hasProposal {
+		isCurrentBranch := node.Branch == currentBranch && !foundCurrent
+		proposal, hasProposal := node.Proposal.Get()
+		switch {
+		case isCurrentBranch:
+			builder.WriteString("**")
+			builder.WriteString(node.Branch.String())
+			builder.WriteString("**")
+		case hasProposal:
 			builder.WriteString(proposal.Data.Data().URL)
-		} else {
+		default:
 			builder.WriteString(node.Branch.String())
 		}
-		isCurrentBranch := node.Branch == currentBranch && !foundCurrent
 		if isCurrentBranch {
 			builder.WriteString(" :point_left:")
 			foundCurrent = true
@@ -61,9 +67,15 @@ func renderNodeUp(builder *strings.Builder, node TreeNodeWithProposal, currentBr
 	// Render if: has proposal/descendant with proposal, OR on path from current to root
 	if node.BranchOrAncestorHasProposal() || onPathToRoot {
 		builder.WriteString("- ")
-		if proposal, hasProposal := node.Proposal.Get(); hasProposal {
+		proposal, hasProposal := node.Proposal.Get()
+		switch {
+		case isCurrentBranch:
+			builder.WriteString("**")
+			builder.WriteString(node.Branch.String())
+			builder.WriteString("**")
+		case hasProposal:
 			builder.WriteString(proposal.Data.Data().URL)
-		} else {
+		default:
 			builder.WriteString(node.Branch.String())
 		}
 		if isCurrentBranch {
