@@ -1,5 +1,20 @@
 # Git Town Changelog
 
+## 22.7.0 (2026-03-21)
+
+#### New Features
+
+- Git Town now respects the `TERM=dumb` environment variable. When set, all interactive UI is disabled, and Git Town falls back to printing the required CLI arguments instead. This makes it safe to run in CI, headless environments (AI agents), or terminals without full interactive support ([#1201](https://github.com/git-town/git-town/issues/1201)).
+- Added documentation for integrating Git Town status into Starship prompts ([#6091](https://github.com/git-town/git-town/pull/6091)).
+
+#### Bug Fixes
+
+- [Breadcrumbs](https://www.git-town.com/how-to/proposal-breadcrumb.html) no longer link to the current branch. This prevents unnecessary error notifications on GitHub ([git-town/action#72](https://github.com/git-town/action/issues/72)).
+
+#### Contributors
+
+Big thanks to @heisencoder, @jakeleboeuf, @kevgo, @lud-wj, @stephenwade, @tugrulates, @zodman for code, feedback, and ideas across 13 pull requests and 5 resolved issues!
+
 ## 22.6.0 (2025-02-22)
 
 #### New Features
